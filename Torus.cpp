@@ -41,12 +41,33 @@ struct Vec3
             case Axies::Z: return z;
         }
     }
+    Vec3 operator-(const Vec3& other) const
+    {
+        return {this->x-other.x,
+        this->y-other.y,
+        this->z-other.z
+        };
+    }
     Vec3 operator+(const Vec3& other) const
     {
         return {this->x+other.x,
         this->y+other.y,
         this->z+other.z
         };
+    }
+    double scalarprodukt(const Vec3 &other)
+    {
+        return this->x*other.x+
+          this->y*other.y+
+          this->z*other.z;
+    }
+    Vec3 norm()
+    {
+        return {x/length(),y/length(),z/length()};
+    }
+    double length() const
+    {
+        return sqrt(x*x+y*y+z*z);
     }
 };
 
@@ -94,36 +115,14 @@ Vec3 Vec3::transform(Matrix m)
     };
 }
 
-class Camera{
-    double project(double dist, double height){
-        return m_focalLength*(height/dist);
-    }
-    public:
-    Vec3 m_position;
-    double m_focalLength;
-        Camera(Vec3 pos, double f)
-            : m_position(pos), m_focalLength(f)
-        {}
-        void renderPoint(Vec3 point, double light)
-        {
-            double x=project(point.x-m_position.x, point.z-m_position.z)*2,
-                   y=project(point.x-m_position.x, point.y-m_position.y);
-            double dist = point.x-m_position.x;
-            dist*=light;
-            dist = 255 - (dist>200? 200 : dist);
-            Conscreen_pixel p = {.character='#', .style=CONSCREEN_ANSI_DEFAULT((uint8_t)dist,(uint8_t)dist,(uint8_t)dist)};
-            Conscreen_point s = Conscreen_console_size_get();
-            Conscreen_pixel current = Conscreen_screen_get(x+s.x/2,y+s.y/2);
-            if(current.style.forground.r<dist || current.character!='#')
-                Conscreen_screen_set(x+s.x/2,y+s.y/2, p);
-    }
-};
-
 class Torous
 {
+
+    public:
     Vec3 m_pos;
     double m_rotX, m_rotY,
-        m_holeRadius, m_tubeRadius;
+        m_holeRadius, m_tubeRadius,
+        angle=0.01;
 
     static std::vector<Vec3> getCircle(Vec3 center, double radius, Axies a, double angle)
     {
@@ -137,13 +136,11 @@ class Torous
         }
         return circle;
     }
-
-    public:
         Torous(Vec3 pos, double holeRadius, double tubeRadius, double rotX, double rotY)
             : m_pos(pos), m_rotX(rotX), m_rotY(rotY), m_holeRadius(holeRadius), m_tubeRadius(tubeRadius)
         {}
 
-        std::vector<Vec3> getPoints(double angle)
+        std::vector<Vec3> getPoints()
         {
             Vec3 first_pos = m_pos;
             first_pos.get(X)+=m_holeRadius;
@@ -169,6 +166,37 @@ class Torous
     }
 };
 
+class Camera{
+    double project(double dist, double height){
+        return m_focalLength*(height/dist);
+    }
+    public:
+    Vec3 m_position;
+    double m_focalLength;
+        Camera(Vec3 pos, double f)
+            : m_position(pos), m_focalLength(f)
+        {}
+        void renderPoint(Torous t, double light)
+        {
+            std::vector<Vec3> points = t.getPoints();
+            Vec3 lightVec = Vec3{-5,-5,5}.norm();
+            for(Vec3 point : points){
+                double x=project(point.x-m_position.x, point.z-m_position.z)*2,
+                    y=project(point.x-m_position.x, point.y-m_position.y);
+
+                double angle = lightVec.scalarprodukt((point-t.m_pos).norm());
+                double dist = point.x-m_position.x;
+                unsigned int light = angle*light*255 - dist*2;
+                light = light>255? 255 : light;
+                Conscreen_pixel p = {.character='#', .style=CONSCREEN_ANSI_DEFAULT((uint8_t)light,(uint8_t)light,(uint8_t)light)};
+                Conscreen_point s = Conscreen_console_size_get();
+                Conscreen_pixel current = Conscreen_screen_get(x+s.x/2,y+s.y/2);
+                if(current.style.forground.r<dist || current.character!='#')
+                    Conscreen_screen_set(x+s.x/2,y+s.y/2, p);
+            }
+    }
+};
+
 int main()
 {
     Conscreen_init();
@@ -177,7 +205,7 @@ int main()
     Conscreen_point p = Conscreen_console_size_get();
     // std::cout << p.x << " : " << p.y << std::endl;
 
-    auto points = t.getPoints(0.05);
+    auto points = t.getPoints();
     for(auto p : points) printf("%lf %fl %fl\n", p.x, p.y, p.z);
 
     bool flag=true;
@@ -188,9 +216,7 @@ int main()
         if(Conscreen_screen_begin()==CS_REDRAW
            || flag){
             Conscreen_screen_clear();
-            for(auto p : points | std::ranges::views::transform([time](auto p){return p.transform(Torous::getRotTransform(Y,time));})){
-                c.renderPoint(p, light);
-            }
+                c.renderPoint(t, light);
             Conscreen_screen_flush();
         }
         flag=true;
