@@ -5,6 +5,7 @@
 #include "Matrix.hpp"
 #include "Vec.hpp"
 #include <iostream>
+#include <string>
 
 #define PI 3.14159265358979
 using namespace anli;
@@ -14,20 +15,20 @@ class Torous
 {
 
     public:
-    Vec3 m_pos;
+    Vec<3> m_pos;
     double m_rotX, m_rotY,
         m_holeRadius, m_tubeRadius,
-        angle=0.01;
+        angle=0.1;
 
-    static std::vector<Vec<3>> getCircle(Vec<3> center, double radius, std::size_t a, double angle)
+    static std::vector<Vec<3>> getCircle(Vec<3> center, double radius, Dimension a, double angle)
     {
         std::vector<Vec<3>> circle;
         for(double time=0; time<2.0*PI; time+=angle){
 
-            Matrix rot= Torous::getRotTransform(a, time);
+            Matrix rot= Matrix<3,3>::getRotation(a, time);
             Vec<3> v= {0,0,0};
-            v.get(a+1)=radius;
-            circle.push_back(center+v.transform(rot));
+            v.get(a.next())=radius;
+            circle.push_back(center+rot*v);
         }
         return circle;
     }
@@ -35,15 +36,20 @@ class Torous
             : m_pos(pos), m_rotX(rotX), m_rotY(rotY), m_holeRadius(holeRadius), m_tubeRadius(tubeRadius)
         {}
 
-        std::vector<Vec<3>> getPoints()
+        std::vector<Matrix<2,3>> getPoints()
         {
             Vec<3> first_pos = m_pos;
             first_pos.get(X)+=m_holeRadius;
             std::vector<Vec<3>> circle = getCircle(first_pos, m_tubeRadius, Y, angle);
-            std::vector<Vec<3>> torous;
+            std::vector<Matrix<2,3>> torous;
             for(double time=0; time < 2.0*PI; time+=angle){
                 std::ranges::copy(circle
-                                | std::ranges::views::transform([time](Vec<3> p){return p.transform(getRotTransform(Z,time));}),
+                                  | std::ranges::views::transform([time,this](const Vec<3> &p){
+                                      Vec<3> pos = Matrix<3,3>::getRotation(X,this->m_rotX)
+                                          *Matrix<3,3>::getRotation(Y,this->m_rotY)
+                                          *Matrix<3,3>::getRotation(Z,time)*p;
+                                    return Matrix<2,3>{pos, (pos-p).norm()};
+                                  }),
                                 std::back_inserter(torous));
             }
             return torous;
@@ -51,13 +57,17 @@ class Torous
 };
 
 class Camera{
+    // double project(double dist, double height){
+    //     return m_focalLength*(height/dist);
+    // }
     Vec<2> project(Vec<3> point){
+        point = point-m_position;
         Matrix<3,2> proj = {
             {0},
-            {1,0},
-            {0,1}
+            {0,1},
+            {2,0}
         };
-        return proj*point*m_focalLength/get<0>(point);
+        return proj*point*m_focalLength/point.x;
     }
     public:
     Vec<3> m_position;
@@ -65,22 +75,29 @@ class Camera{
         Camera(Vec<3> pos, double f)
             : m_position(pos), m_focalLength(f)
         {}
-        void renderPoint(Torous t, double light)
+        void renderPoint(Torous t, double ambient)
         {
-            std::vector<Vec<3>> points = t.getPoints();
-            Vec<3> lightVec = Vec<3>{-5,-5,5}.norm();
-            for(Vec<3> point : points){
-                Vec<2> pos = project(point);
+            auto points = t.getPoints();
+            Vec<3> lightVec = Vec<3>{2,-5,5}.norm();
+            for(Matrix<2,3> &tp : points){
+                Vec<3> point=tp.get(0),
+                       norm =tp.get(1);
 
-                double angle = (point-t.m_pos).norm()*lightVec;
-                double dist = point.x-m_position.x;
-                unsigned int light = angle*light*255 - dist*2;
-                light = light>255? 255 : light;
+                double angle = std::max(-lightVec*norm,0.0);
+                double dist = std::abs(point.x-m_position.x);
+                unsigned int light = std::max(angle*255+dist*ambient,0.0);
+                light = light > 255? 255 : light;
                 Conscreen_pixel p = {.character='#', .style=CONSCREEN_ANSI_DEFAULT((uint8_t)light,(uint8_t)light,(uint8_t)light)};
                 Conscreen_point s = Conscreen_console_size_get();
-                Conscreen_pixel current = Conscreen_screen_get(x+s.x/2,y+s.y/2);
-                if(current.style.forground.r<dist || current.character!='#')
-                    Conscreen_screen_set(x+s.x/2,y+s.y/2, p);
+
+                Vec<2> imgCoords = project(point);
+                Conscreen_screen_set(imgCoords.x+s.x/2,imgCoords.y+s.y/2, p);
+
+                // std::string sa = std::to_string(angle);
+                // for(int i=0; i< sa.length(); i++){
+                //     Conscreen_pixel f = {.character=sa.at(i), .style=CONSCREEN_ANSI_NORMAL};
+                //     Conscreen_screen_set(i,0,f);
+                // }
             }
     }
 };
@@ -88,15 +105,15 @@ class Camera{
 int main()
 {
     Conscreen_init();
-    Torous t({0,0,0}, 5, 1, 0, 0);
+    Torous t({0,0,0}, 5, 2, 0, 0);
+    auto points = t.getPoints();
+    for(auto p : points) std::cout << p;
     Camera c({-20,0,0}, 20);
     Conscreen_point p = Conscreen_console_size_get();
 
-    auto points = t.getPoints();
-    for(auto p : points) std::cout << p;
 
     bool flag=true;
-    double time =0, light=7;
+    double time =0, light=3;
 
     while(true){
 
@@ -110,13 +127,13 @@ int main()
         double d=0.5;
         switch (Conscreen_console_get_key()) {
             case 'w':
-                c.m_position.get(X)+=d;
+                c.m_position.x+=d;
                 break;
             case '[':
-                light+=0.1;
+                light+=0.3;
                 break;
             case ']':
-                light-=0.1;
+                light-=0.3;
                 break;
             case '+':
                 c.m_focalLength+=d;
@@ -125,22 +142,25 @@ int main()
                 c.m_focalLength-=d;
                 break;
             case 'j':
-                c.m_position.get(Y)+=d;
+                c.m_position.y+=d;
                 break;
             case 'u':
-                c.m_position.get(Y)-=d;
+                c.m_position.y-=d;
                 break;
             case 'd':
-                c.m_position.get(Z)+=d;
+                c.m_position.z+=d;
                 break;
             case 'a':
-                c.m_position.get(Z)-=d;
+                c.m_position.z-=d;
                 break;
             case 's':
-                c.m_position.get(X)-=d;
+                c.m_position.x-=d;
                 break;
-            case ' ':
-                time+=0.05;
+            case 'g':
+                t.m_rotX+=0.05;
+                break;
+            case 'h':
+                t.m_rotY+=0.05;
                 break;
             default:
                 flag=false;

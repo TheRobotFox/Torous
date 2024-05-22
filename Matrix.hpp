@@ -1,7 +1,6 @@
 #pragma once
 #include "Vec.hpp"
 #include <array>
-#include <bits/ranges_algo.h>
 #include <cstddef>
 #include <functional>
 #include <initializer_list>
@@ -44,6 +43,15 @@ namespace anli {
         {
             return m2 | views::transform([this](auto v){return *this*v;});
         }
+        constexpr Vec<r, T>& get(Dimension d)
+        {
+            return this->at(d.get(c));
+        }
+
+        constexpr const Vec<r, T>& get(Dimension d) const
+        {
+            return this->at(d.get(c));
+        }
         constexpr Vec<r, T>& get(std::size_t i)
         {
             return this->at(i);
@@ -55,12 +63,18 @@ namespace anli {
 
         // Vector Math
         template<typename O>
-        constexpr Vec<r, decltype(T()/O())> operator*(Vec<r, O> v) const
+        constexpr Vec<r, decltype(T()/O())> operator*(Vec<c, O> v) const
         {
             return fold_left(zip_transform_view(std::multiplies<>(),*this,v), Vec<r, O>{0}, std::plus<>());
         }
 
         // Constructors
+
+        constexpr Matrix& operator=(const Matrix &m)
+        {
+            copy_n(m.begin(), c, this->begin());
+            return *this;
+        }
         template<range R>
         constexpr Matrix(R &&range)
         {
@@ -112,30 +126,31 @@ namespace anli {
     }
 }
 
-int main() {
-    anli::Vec<3> v={2,1,6};
-    std::cout << -v << std::endl;
-    std::cout << v+v/2 << std::endl;
-    std::cout << v*2 << std::endl;
-    std::cout << v*v << std::endl;
+// int main() {
+//     anli::Vec<3> v={2,1,6};
+//     std::cout << v.x << v.y << v.z << std::endl;
+//     std::cout << -v << std::endl;
+//     std::cout << v+v/2 << std::endl;
+//     std::cout << v*2 << std::endl;
+//     std::cout << v*v << std::endl;
 
-    anli::Vec<3> a={1,0,0};
-    anli::Vec<3> b={0,1,0};
+//     anli::Vec<3> a={1,0,0};
+//     anli::Vec<3> b={0,1,0};
 
-    std::cout << a.cross_product(b) << std::endl;
+//     std::cout << a.cross_product(b) << std::endl;
 
-    using namespace anli;
+//     using namespace anli;
 
-    anli::Vec<2> bv={5,2};
+//     anli::Vec<2> bv={5,2};
 
-    anli::Matrix<2,2> m1={
-    {0,1},
-    {1,0}
-};
+//     anli::Matrix<2,2> m1={
+//         {0,1},
+//         {1,0}
+//     };
 
-    std::cout << m1 << std::endl;
-    std::cout << m1*bv << std::endl;
-    std::cout << m1*m1 << std::endl;
-    std::cout << Matrix<3, 3>::getRotation(Z, 3.14159265358979/2) << std::endl;
-    return 0;
-}
+//     std::cout << m1 << std::endl;
+//     std::cout << m1*bv << std::endl;
+//     std::cout << m1*m1 << std::endl;
+//     std::cout << Matrix<3, 3>::getRotation(Z, 3.14159265358979/2) << std::endl;
+//     return 0;
+// }
