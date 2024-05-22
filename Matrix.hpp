@@ -4,58 +4,99 @@
 #include <bits/ranges_algo.h>
 #include <cstddef>
 #include <functional>
+#include <initializer_list>
 #include <ranges>
 #include <sstream>
+#include <cmath>
 
 namespace anli {
     using std::array;
     using namespace std::ranges;
-    template<std::size_t r, std::size_t c, typename T=double>
+    template<std::size_t c, std::size_t r, typename T=double>
     struct Matrix : public array<Vec<r, T>, c>
     {
         // Matrix Math
         template<typename O>
-        constexpr Matrix<r,c, decltype(T()-O())> operator-(const Matrix<r,c, O> &other) const
+        constexpr Matrix<c,r, decltype(T()-O())> operator-(const Matrix<c,r, O> &other) const
         {
             return views::zip_transform(std::minus<>(),
                                 *this, other);
         }
         template<typename O>
-        constexpr Matrix<r,c, decltype(T()+O())> operator+(const Matrix<r,c, O> &other) const
+        constexpr Matrix<c,r, decltype(T()+O())> operator+(const Matrix<c,r, O> &other) const
         {
             return views::zip_transform(std::plus<>(),
                                 *this, other);
         }
         template<typename O>
-        constexpr Matrix<r,c, decltype(T()*O())> operator*(T scalar) const
+        constexpr Matrix<c,r, decltype(T()*O())> operator*(T scalar) const
         {
             return *this | views::transform([scalar](auto e){return e*scalar;});
         }
         template<typename O>
-        constexpr Matrix<r,c, decltype(T()/O())> operator/(O scalar) const
+        constexpr Matrix<c,r, decltype(T()/O())> operator/(O scalar) const
         {
             return *this | views::transform([scalar](auto e){return e/scalar;});
         }
 
-        template<std::size_t nr, typename O>
-        constexpr Matrix<nr,c, decltype(T()+O())> operator*(const Matrix<nr,r, O> &m2) const
+        template<std::size_t nc, typename O>
+        constexpr Matrix<nc,r, decltype(T()+O())> operator*(const Matrix<nc,c, O> &m2) const
         {
-            return transform_view(m2, [this](auto v){
-                return fold_left(zip_transform_view(std::multiplies<>(), v, *this), Vec<r>{0}, std::plus<>());});
+            return m2 | views::transform([this](auto v){return *this*v;});
+        }
+        constexpr Vec<r, T>& get(std::size_t i)
+        {
+            return this->at(i);
+        }
+        constexpr const Vec<r, T>& get(std::size_t i) const
+        {
+            return this->at(i);
+        }
+
+        // Vector Math
+        template<typename O>
+        constexpr Vec<r, decltype(T()/O())> operator*(Vec<r, O> v) const
+        {
+            return fold_left(zip_transform_view(std::multiplies<>(),*this,v), Vec<r, O>{0}, std::plus<>());
+        }
+
+        // Constructors
+        template<range R>
+        constexpr Matrix(R &&range)
+        {
+            copy_n(range.begin(), c, this->begin());
+        }
+        constexpr Matrix(std::initializer_list<std::initializer_list<T>> init)
+        {
+            copy_n(init.begin(), c, this->begin());
         }
 
         template<typename... Ip>
         constexpr Matrix(Ip... init)
             : array<Vec<r, T>, c>{static_cast<Vec<r,T>>(init)...}
         {}
+
+        constexpr static Matrix<3,3> getRotation(Dimension axies, double angle)
+        {
+            Matrix m = {
+                {1,0,0},
+                {0,1,0},
+                {0,0,1}
+            };
+            m.get(axies.next()).get(axies.next())=cos(angle);
+            m.get(axies.next()).get(axies.next(2))=sin(angle);
+            m.get(axies.next(2)).get(axies.next())=-sin(angle);
+            m.get(axies.next(2)).get(axies.next(2))=cos(angle);
+            return m;
+        }
     };
     template<std::size_t r, std::size_t c, typename T>
-    Matrix<r,c,T> operator-(const Matrix<r,c,T> &m)
+    Matrix<c,r,T> operator-(const Matrix<c,r,T> &m)
     {
         return views::transform(m, std::negate<>());
     }
     template<std::size_t r, std::size_t c, typename T>
-    std::ostream& operator<<(std::ostream &out, const Matrix<r,c,T> &v)
+    std::ostream& operator<<(std::ostream &out, const Matrix<c,r,T> &v)
     {
         out << '[';
         copy(v | views::transform([](auto e){
@@ -84,11 +125,17 @@ int main() {
     std::cout << a.cross_product(b) << std::endl;
 
     using namespace anli;
-    anli::Matrix<3,2> m1={Vec<3>{1,2,3},Vec<3>{4,5,6}};
-    anli::Matrix<2,2> m2={Vec<3>{1,2},Vec<3>{4,5}};
+
+    anli::Vec<2> bv={5,2};
+
+    anli::Matrix<2,2> m1={
+    {0,1},
+    {1,0}
+};
 
     std::cout << m1 << std::endl;
-    std::cout << m2 << std::endl;
-    std::cout << m2*m1 << std::endl;
+    std::cout << m1*bv << std::endl;
+    std::cout << m1*m1 << std::endl;
+    std::cout << Matrix<3, 3>::getRotation(Z, 3.14159265358979/2) << std::endl;
     return 0;
 }
